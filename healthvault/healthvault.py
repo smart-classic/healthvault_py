@@ -1,4 +1,4 @@
-# pyhv: A Pythonic Interface to the Microsoft HealthVault XML-over-HTTP API
+# healthvault: A Pythonic Interface to the Microsoft HealthVault's API
 #
 # Arjun Sanyal <arjun.sanyal@childrens.harvard.edu>
 #
@@ -152,11 +152,13 @@ class HVConn(object):
         self._auth_token = str(self._get_single_el_value(dom, 'token'))
         self._shared_secret = str(self._get_single_el_value(dom, 'shared-secret'))
 
-    def __init__(self, _user_auth_token):
-        self._user_auth_token = str(_user_auth_token)
+    def __init__(self, user_auth_token=None):
         self._init_private_key()
         self._authenticate()
-        self.getPersonInfo()
+
+        if user_auth_token:
+            self._user_auth_token = str(user_auth_token)
+            self.getPersonInfo()
 
     # note: method names match the HV API but with a leading lowercase letter
     def getPersonInfo(self):
@@ -342,4 +344,53 @@ class HVConn(object):
             # todo: add time
             date = datetime.date(int(y), int(m), int(d)).isoformat()
             weight_in_kg = csss('kg')(root)[0].text
-            self.person.weights.append((date, weight_in_kg))
+
+    def createConnectRequest(self, external_id, friendly_name, q, a):
+        header_tmpl = string.Template("""<header><method>CreateConnectRequest</method><method-version>1</method-version><auth-session><auth-token>$AUTH_TOKEN</auth-token></auth-session><language>en</language><country>US</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>""")
+
+        info_tmpl = string.Template('<info><friendly-name>$FRIENDLY_NAME</friendly-name><question>$QUESTION</question><answer>$ANSWER</answer><external-id>$EXTERNAL_ID</external-id></info>')
+        info_str = info_tmpl.substitute({
+            'FRIENDLY_NAME': friendly_name,
+            'QUESTION': q,
+            'ANSWER': a,
+            'EXTERNAL_ID': external_id
+        })
+
+        hash_data_str = base64.b64encode(hashlib.sha256(info_str).digest()).strip()
+
+        header_str = header_tmpl.substitute({
+            'AUTH_TOKEN': self._auth_token,
+            'NOW': self._now_in_iso(),
+            'TTL': self._ttl,
+            'VERSION': self._version,
+            'HASH_DATA': hash_data_str
+        })
+
+        # hmac the complete <header> (don't forget to b64 decode the secret)
+        h = hmac.new(base64.b64decode(self._shared_secret),
+                header_str,
+                hashlib.sha256)
+        hmac_data_str = base64.b64encode(h.digest())
+
+        # build the final <request>
+        req_tmpl = string.Template("""<wc-request:request xmlns:wc-request="urn:com.microsoft.wc.request"><auth><hmac-data algName="HMACSHA256">$HMAC</hmac-data></auth>$HEADER$INFO</wc-request:request>""")
+        req_str = req_tmpl.substitute({
+            'HMAC': hmac_data_str,
+            'HEADER': header_str,
+            'INFO': info_str
+        })
+
+        #req_str = re.sub(' {2,}', '', req_str.strip())
+        #print '---\n'+req_str+'\n---'
+        response = self._send_request(req_str)
+        dom = minidom.parseString(response.read())
+        if DEBUG:
+            print self._pretty_print_dom(dom)
+
+        el = dom.getElementsByTagName('code')[0]
+        code = str(el.firstChild.nodeValue)
+        code = self._get_single_el_value(dom, 'code')
+        if code != '0':
+            raise # 'Non-zero return code in getPersonInfo'
+        else:
+            return dom
