@@ -1,3 +1,4 @@
+#
 # healthvault: A Pythonic Interface to the Microsoft HealthVault's API
 #
 # Arjun Sanyal <arjun.sanyal@childrens.harvard.edu>
@@ -330,14 +331,14 @@ class HVConn(object):
             date = datetime.date(int(y), int(m), int(d)).isoformat()
             weight_in_kg = csss('kg')(root)[0].text
 
-    def createConnectRequest(self, external_id, friendly_name, q, a):
+    def createConnectRequest(self, external_id, friendly_name, secret_q, secret_a):
         header_tmpl = string.Template("""<header><method>CreateConnectRequest</method><method-version>1</method-version><auth-session><auth-token>$AUTH_TOKEN</auth-token></auth-session><language>en</language><country>US</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>""")
 
         info_tmpl = string.Template('<info><friendly-name>$FRIENDLY_NAME</friendly-name><question>$QUESTION</question><answer>$ANSWER</answer><external-id>$EXTERNAL_ID</external-id></info>')
         info_str = info_tmpl.substitute({
             'FRIENDLY_NAME': friendly_name,
-            'QUESTION': q,
-            'ANSWER': a,
+            'QUESTION': secret_q,
+            'ANSWER': secret_a,
             'EXTERNAL_ID': external_id
         })
 
@@ -365,17 +366,17 @@ class HVConn(object):
             'INFO': info_str
         })
 
-        #req_str = re.sub(' {2,}', '', req_str.strip())
         #print '---\n'+req_str+'\n---'
         response = self._send_request(req_str)
+
         dom = minidom.parseString(response.read())
         if DEBUG:
             print self._pretty_print_dom(dom)
 
         el = dom.getElementsByTagName('code')[0]
-        code = str(el.firstChild.nodeValue)
         code = self._get_single_el_value(dom, 'code')
         if code != '0':
-            raise # 'Non-zero return code in getPersonInfo'
+            raise # 'Non-zero return code
         else:
-            return dom
+            root = etree.fromstring(dom.toxml())
+            return csss('identity-code')(root)[0].text
