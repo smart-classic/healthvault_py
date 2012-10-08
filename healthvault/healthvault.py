@@ -3,13 +3,20 @@
 #
 # Arjun Sanyal <arjun.sanyal@childrens.harvard.edu>
 #
-# note: method names match the HV API but with a leading lowercase letter
+# Notes
+# - method names match the HV API but with a leading lowercase letter
+# - requires a settings.py file with:
+#   - APP_ID
+#   - APP_PUBLIC_KEY
+#   - APP_PRIVATE_KEY
+#   - APP_THUMBPRINT
+#   - HV_SERVICE_SERVER
 #
-# Todo
-# - refactor using lxml's CSSSelectors (see 'csss') and E-factory?
+# TODO
+# - refactor xml creation using lxml's E-factory?
 #   <http://lxml.de/tutorial.html#the-e-factory>
 # - add newlines and spacing to the templates
-# - do a regex compacting multiple spaces and newlines
+
 import base64
 from   Crypto.Signature import PKCS1_v1_5
 from   Crypto.Hash import SHA
@@ -25,7 +32,6 @@ import re
 import settings
 import socket
 import string
-from   xml.dom import minidom
 
 DEBUG = True
 LOG_XML = True
@@ -36,7 +42,7 @@ class HVPerson(object):
     selected_record_id = None
     gender = None # m or f
     birth_year = None
-    weights = []
+    weights = [] # a list of (datetime string, value in kg)
 
 class HVConn(object):
     _user_auth_token = None
@@ -52,15 +58,8 @@ class HVConn(object):
 
     person = HVPerson()
 
-    def _get_single_el_value(self, dom, tag_name):
-        el = dom.getElementsByTagName(tag_name)[0]
-        return el.firstChild.nodeValue
-
-    def _pretty_print_dom(self, dom):
-        print dom.toprettyxml(indent='  ')
-
-    def _pretty_print_xml_str(self, s):
-        self._pretty_print_dom(minidom.parseString(s))
+    def _pretty_print_tree(self, tree):
+        print etree.tostring(tree, pretty_print=True)
 
     def _now_in_iso(self):
         return datetime.datetime.utcnow().isoformat()
@@ -94,7 +93,7 @@ class HVConn(object):
         else:
             return resp
 
-    def _send_request_and_get_dom(self, payload):
+    def _send_request_and_get_tree(self, payload):
         conn = httplib.HTTPSConnection(settings.HV_SERVICE_SERVER, 443)
         conn.putrequest('POST', '/platform/wildcat.ashx')
         conn.putheader('Content-Type', 'text/xml')
@@ -110,16 +109,14 @@ class HVConn(object):
         if resp.status != 200:
             raise
         else:
-            dom = minidom.parseString(resp.read())
-            if DEBUG:
-                print self._pretty_print_dom(dom)
+            tree = etree.fromstring(resp.read())
+            if DEBUG and LOG_XML:
+                print self._pretty_print_tree(tree)
 
-            el = dom.getElementsByTagName('code')[0]
-            code = self._get_single_el_value(dom, 'code')
-            if code != '0':
-                raise 'Non-zero return code in _send_request_and_get_dom()'
+            if csss('code')(tree)[0].text != '0':
+                raise 'Non-zero return code in _send_request_and_get_tree()'
             else:
-                return dom
+                return tree
 
     def _authenticate(self):
         content_tmpl = string.Template("""
@@ -173,9 +170,9 @@ class HVConn(object):
 
         }).translate(None, '\n')
 
-        dom = self._send_request_and_get_dom(payload)
-        self._auth_token = str(self._get_single_el_value(dom, 'token'))
-        self._shared_secret = str(self._get_single_el_value(dom, 'shared-secret'))
+        tree = self._send_request_and_get_tree(payload)
+        self._auth_token = csss('token')(tree)[0].text
+        self._shared_secret = csss('shared-secret')(tree)[0].text
 
     def __init__(self, user_auth_token=None):
         self._init_private_key()
@@ -230,153 +227,90 @@ class HVConn(object):
 
     def getPersonInfo(self):
         # TODO: extract more record data
-        # <record app-record-auth-action="NoActionRequired" app-specific-record-id="218697" auth-expires="9999-12-31T23:59:59.999Z" date-created="2012-09-19T16:07:52.507Z" date-updated="2012-09-24T19:22:00.877Z" display-name="Arjun" id="f9982b79-4369-4357-8268-0b344941ab02" location-country="US" max-size-bytes="4294967296" record-custodian="true" rel-name="Self" rel-type="1" size-bytes="3167" state="Active">
-        dom = self._send_request_and_get_dom(
+        # <record app-record-auth-action="NoActionRequired"
+        # app-specific-record-id="218697"
+        # auth-expires="9999-12-31T23:59:59.999Z"
+        # date-created="2012-09-19T16:07:52.507Z"
+        # date-updated="2012-09-24T19:22:00.877Z" display-name="Arjun"
+        # id="f9982b79-4369-4357-8268-0b344941ab02" location-country="US"
+        # max-size-bytes="4294967296" record-custodian="true" rel-name="Self"
+        # rel-type="1" size-bytes="3167" state="Active">
+
+        tree = self._send_request_and_get_tree(
             self._create_request('<info></info>', 'GetPersonInfo')
         )
-        self.person.person_id = self._get_single_el_value(dom, 'person-id')
-        self.person.name = self._get_single_el_value(dom, 'name')
-        self.person.selected_record_id = self._get_single_el_value(
-                                            dom,
-                                            'selected-record-id')
+
+
+        self.person.person_id = csss('person-id')(tree)[0].text
+        self.person.name = csss('name')(tree)[0].text
+        self.person.selected_record_id = csss('selected-record-id')(tree)[0].text
         self._record_id = self.person.selected_record_id
 
     def getThings(self, type):
-        info = \
-            '<info><group><filter><type-id>'+type+'</type-id></filter><format></format></group></info>'
-        return self._send_request_and_get_dom(
+        info = '<info><group><filter><type-id>' \
+                + type \
+                + '</type-id></filter><format></format></group></info>'
+        return self._send_request_and_get_tree(
             self._create_request(info,
                                  'GetThings',
                                  record_id=self._record_id)
         )
 
     def getThingById(self, id):
-        # todo: hardcoding for now... refactor with above
-        # need to supply some context here: either record, person or app id
-        # potentially same has header_tmpl above then
-        header_tmpl = string.Template("""<header><method>GetThings</method><method-version>1</method-version><record-id>$RECORD_ID</record-id><auth-session><auth-token>$AUTH_TOKEN</auth-token><user-auth-token>$USER_AUTH_TOKEN</user-auth-token></auth-session><language>en</language><country>US</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>""")
+        # Note: this is also a 'GetThings' call with additional data
+        # in the <info> element. The <xml/> is required eventhough
+        # it's marked at <xml />* in the spec. Spec bug?
+        info = '<info><group><id>' \
+                + id \
+                +'</id><format><section>core</section><xml/></format></group></info>'
 
-        # this is the query: note: added "<section>core</section>", maybe can add to above?
-        # do we need <xml/>?? Yes we do! It would be awesome if that was
-        # not '<xml />*' in the spec
-        info_str = '<info><group><id>'+id+'</id><format><section>core</section><xml/></format></group></info>'
-        hash_data_str = base64.b64encode(hashlib.sha256(info_str).digest()).strip()
-
-        header_str = header_tmpl.substitute({
-            'RECORD_ID': self._record_id,
-            'AUTH_TOKEN': self._auth_token,
-            'USER_AUTH_TOKEN': self._user_auth_token,
-            'NOW': self._now_in_iso(),
-            'TTL': self._ttl,
-            'VERSION': self._version,
-            'HASH_DATA': hash_data_str
-        })
-
-        # hmac the complete <header> (don't forget to b64 decode the secret)
-        h = hmac.new(base64.b64decode(self._shared_secret),
-                header_str,
-                hashlib.sha256)
-        hmac_data_str = base64.b64encode(h.digest())
-
-        # build the final <request>
-        req_tmpl = string.Template("""<wc-request:request xmlns:wc-request="urn:com.microsoft.wc.request"><auth><hmac-data algName="HMACSHA256">$HMAC</hmac-data></auth>$HEADER$INFO</wc-request:request>""")
-        req_str = req_tmpl.substitute({
-            'HMAC': hmac_data_str,
-            'HEADER': header_str,
-            'INFO': info_str
-        })
-
-        #req_str = re.sub(' {2,}', '', req_str.strip())
-        #print '---\n'+req_str+'\n---'
-        response = self._send_request(req_str)
-        dom = minidom.parseString(response.read())
-        if DEBUG:
-            print self._pretty_print_dom(dom)
-
-        el = dom.getElementsByTagName('code')[0]
-        code = str(el.firstChild.nodeValue)
-        code = self._get_single_el_value(dom, 'code')
-        if code != '0':
-            raise # 'Non-zero return code in getPersonInfo'
-        else:
-            return dom
+        return self._send_request_and_get_tree(
+            self._create_request(info,
+                                 'GetThings',
+                                 record_id=self._record_id)
+        )
 
     def getBasicDemographicInformation(self):
-        dom = self.getThings('bf516a61-5252-4c28-a979-27f45f62f78d')
-        thing_id_els = dom.getElementsByTagName('thing-id')
-        for thing_id_el in thing_id_els:
-            thing = self.getThingById(thing_id_el.firstChild.nodeValue)
-            root = etree.fromstring(thing.toxml())
-            self.person.gender = csss('gender')(root)[0].text
-            self.person.birth_year = csss('birthyear')(root)[0].text
+        tree = self.getThings('bf516a61-5252-4c28-a979-27f45f62f78d')
+
+        for id in [t.text for t in csss('thing-id')(tree)]:
+            tree = self.getThingById(id)
+            self.person.gender = csss('gender')(tree)[0].text
+            self.person.birth_year = csss('birthyear')(tree)[0].text
 
     def getWeightMeasurements(self):
-        dom = self.getThings('3d34d87e-7fc1-4153-800f-f56592cb0d17')
-        thing_id_els = dom.getElementsByTagName('thing-id')
+        tree = self.getThings('3d34d87e-7fc1-4153-800f-f56592cb0d17')
+        self.person.weights = []  # clear weights
 
-        # clear weights
-        self.person.weights = []
+        for id in [t.text for t in csss('thing-id')(tree)]:
+            tree = self.getThingById(id)
+            date = csss('date')(tree)[0]
+            time = csss('time')(tree)[0]
+            y   = int(csss('y')(date)[0].text)
+            m   = int(csss('m')(date)[0].text)
+            d   = int(csss('d')(date)[0].text)
+            h   = int(csss('h')(time)[0].text)
+            min = int(csss('m')(time)[0].text)
+            s   = int(csss('s')(time)[0].text)
 
-        for thing_id_el in thing_id_els:
-            thing = self.getThingById(thing_id_el.firstChild.nodeValue)
-
-            if DEBUG and LOG_XML:
-                self._pretty_print_dom(thing)
-
-            root = etree.fromstring(thing.toxml())
-            y = csss('y')(root)[0].text
-            m = csss('m')(root)[0].text
-            d = csss('d')(root)[0].text
-            # todo: add time
-            date = datetime.date(int(y), int(m), int(d)).isoformat()
-            weight_in_kg = csss('kg')(root)[0].text
+            dt = datetime.datetime(y, m, d, h, min, s).isoformat()
+            weight_in_kg = float(csss('kg')(tree)[0].text)
+            self.person.weights.append((dt, round(weight_in_kg, 2)))
 
     def createConnectRequest(self, external_id, friendly_name, secret_q, secret_a):
-        header_tmpl = string.Template("""<header><method>CreateConnectRequest</method><method-version>1</method-version><auth-session><auth-token>$AUTH_TOKEN</auth-token></auth-session><language>en</language><country>US</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>""")
-
         info_tmpl = string.Template('<info><friendly-name>$FRIENDLY_NAME</friendly-name><question>$QUESTION</question><answer>$ANSWER</answer><external-id>$EXTERNAL_ID</external-id></info>')
-        info_str = info_tmpl.substitute({
+        info = info_tmpl.substitute({
             'FRIENDLY_NAME': friendly_name,
             'QUESTION': secret_q,
             'ANSWER': secret_a,
             'EXTERNAL_ID': external_id
         })
 
-        hash_data_str = base64.b64encode(hashlib.sha256(info_str).digest()).strip()
+        tree = self._send_request_and_get_tree(
+            self._create_request(info,
+                                 'CreateConnectRequest',
+                                 record_id=self._record_id)
+        )
 
-        header_str = header_tmpl.substitute({
-            'AUTH_TOKEN': self._auth_token,
-            'NOW': self._now_in_iso(),
-            'TTL': self._ttl,
-            'VERSION': self._version,
-            'HASH_DATA': hash_data_str
-        })
-
-        # hmac the complete <header> (don't forget to b64 decode the secret)
-        h = hmac.new(base64.b64decode(self._shared_secret),
-                header_str,
-                hashlib.sha256)
-        hmac_data_str = base64.b64encode(h.digest())
-
-        # build the final <request>
-        req_tmpl = string.Template("""<wc-request:request xmlns:wc-request="urn:com.microsoft.wc.request"><auth><hmac-data algName="HMACSHA256">$HMAC</hmac-data></auth>$HEADER$INFO</wc-request:request>""")
-        req_str = req_tmpl.substitute({
-            'HMAC': hmac_data_str,
-            'HEADER': header_str,
-            'INFO': info_str
-        })
-
-        #print '---\n'+req_str+'\n---'
-        response = self._send_request(req_str)
-
-        dom = minidom.parseString(response.read())
-        if DEBUG:
-            print self._pretty_print_dom(dom)
-
-        el = dom.getElementsByTagName('code')[0]
-        code = self._get_single_el_value(dom, 'code')
-        if code != '0':
-            raise # 'Non-zero return code
-        else:
-            root = etree.fromstring(dom.toxml())
-            return csss('identity-code')(root)[0].text
+        tree = etree.fromstring(tree.toxml())
+        return csss('identity-code')(tree)[0].text
