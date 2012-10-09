@@ -81,22 +81,7 @@ class HVConn(object):
         return base64.encodestring(signer.sign(SHA.new(data)))
 
     def _send_request(self, payload):
-        conn = httplib.HTTPSConnection(settings.HV_SERVICE_SERVER, 443)
-        conn.putrequest('POST', '/platform/wildcat.ashx')
-        conn.putheader('Content-Type', 'text/xml')
-        conn.putheader('Content-Length', '%d' % len(payload))
-        conn.endheaders()
-        try:
-            conn.send(payload)
-        except socket.error, v:
-            if v[0] == 32:      # Broken pipe
-                conn.close()
-            raise
-        resp = conn.getresponse()
-        if resp.status != 200:
-            raise
-        else:
-            return resp
+        pass
 
     def _send_request_and_get_tree(self, payload):
         conn = httplib.HTTPSConnection(settings.HV_SERVICE_SERVER, 443)
@@ -104,6 +89,10 @@ class HVConn(object):
         conn.putheader('Content-Type', 'text/xml')
         conn.putheader('Content-Length', '%d' % len(payload))
         conn.endheaders()
+
+        if DEBUG and LOG_XML:
+            print '\n---\n'+payload+'\n---'
+
         try:
             conn.send(payload)
         except socket.error, v:
@@ -187,17 +176,29 @@ class HVConn(object):
             self._user_auth_token = str(user_auth_token)
             self.getPersonInfo()
 
-    def _build_header(self, method, method_version, hash_data, record_id=None):
+    def _build_header(self,
+                      method,
+                      method_version,
+                      hash_data,
+                      record_id=None,
+                      user_auth_p=True):
         """ Create the header string. record_id is optional """
+
         header = '<header><method>$METHOD</method><method-version>$METHOD_VERSION</method-version>'
+
         if record_id:
             header = header + '<record-id>'+record_id+'</record-id>'
-        header = header + '<auth-session><auth-token>$AUTH_TOKEN</auth-token><user-auth-token>$USER_AUTH_TOKEN</user-auth-token></auth-session><language>$LANGUAGE</language><country>$COUNTRY</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>'
+
+        header = header + '<auth-session><auth-token>$AUTH_TOKEN</auth-token>'
+        if user_auth_p:
+            header = header + '<user-auth-token>'+self._user_auth_token+'</user-auth-token>'
+
+        header = header + '</auth-session><language>$LANGUAGE</language><country>$COUNTRY</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>'
+
         return string.Template(header).substitute({
             'METHOD': method,
             'METHOD_VERSION': method_version,
             'AUTH_TOKEN': self._auth_token,
-            'USER_AUTH_TOKEN': self._user_auth_token,
             'LANGUAGE': self._language,
             'COUNTRY': self._country,
             'NOW': self._now_in_iso(),
@@ -222,12 +223,13 @@ class HVConn(object):
             'INFO': info
         })
 
-    def _create_request(self, info, method, method_version='1', record_id=None):
+    def _create_request(self, info, method, method_version='1', record_id=None, user_auth_p=True):
         hash_data = base64.b64encode(hashlib.sha256(info).digest()).strip()
         header = self._build_header(method=method,
                                     method_version=method_version,
                                     hash_data=hash_data,
-                                    record_id=record_id)
+                                    record_id=record_id,
+                                    user_auth_p=user_auth_p)
         return self._build_request(header, info)
 
     def getPersonInfo(self):
@@ -244,8 +246,6 @@ class HVConn(object):
         tree = self._send_request_and_get_tree(
             self._create_request('<info></info>', 'GetPersonInfo')
         )
-
-
         self.person.person_id = csss('person-id')(tree)[0].text
         self.person.name = csss('name')(tree)[0].text
         self.person.selected_record_id = csss('selected-record-id')(tree)[0].text
@@ -317,5 +317,19 @@ class HVConn(object):
                                  record_id=self._record_id)
         )
 
-        tree = etree.fromstring(tree.toxml())
         return csss('identity-code')(tree)[0].text
+
+    def getAuthorizedConnectRequests(self):
+        tree = self._send_request_and_get_tree(
+            self._create_request('<info></info>',
+                                 'GetAuthorizedConnectRequests',
+                                 user_auth_p=False)
+        )
+
+        reqs = []
+        for e in csss('connect-request')(tree):
+            person_id = csss('person-id')(e)[0].text
+            record_id = csss('record-id')(e)[0].text
+            external_id = csss('external-id')(e)[0].text
+            reqs.append((person_id, record_id, external_id))
+        return reqs
