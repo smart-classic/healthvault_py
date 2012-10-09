@@ -3,6 +3,11 @@
 #
 # Arjun Sanyal <arjun.sanyal@childrens.harvard.edu>
 #
+# Requires:
+# - pycrypto > 2.5 (for signatures)
+# - lxml
+# - cssselect
+#
 # Notes
 # - method names match the HV API but with a leading lowercase letter
 # - requires a settings.py file with:
