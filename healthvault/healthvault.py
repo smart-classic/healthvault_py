@@ -314,7 +314,7 @@ class HVConn(object):
         tree = self._send_request_and_get_tree(
             self._create_request(info,
                                  'CreateConnectRequest',
-                                 record_id=self._record_id)
+                                 user_auth_p=False)
         )
 
         return csss('identity-code')(tree)[0].text
