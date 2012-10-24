@@ -302,6 +302,25 @@ class HVConn(object):
             weight_in_kg = float(csss('kg')(tree)[0].text)
             self.person.weights.append((dt, round(weight_in_kg, 2)))
 
+    def getGlucoseMeasurements(self):
+        tree = self.getThings('879e7c04-4e8a-4707-9ad3-b054df467ce4')
+        self.person.glucoses = []
+
+        for id in [t.text for t in csss('thing-id')(tree)]:
+            tree = self.getThingById(id)
+            date = csss('date')(tree)[0]
+            time = csss('time')(tree)[0]
+            y   = int(csss('y')(date)[0].text)
+            m   = int(csss('m')(date)[0].text)
+            d   = int(csss('d')(date)[0].text)
+            h   = int(csss('h')(time)[0].text)
+            min = int(csss('m')(time)[0].text)
+            s   = int(csss('s')(time)[0].text)
+
+            dt = datetime.datetime(y, m, d, h, min, s).isoformat()
+            g = float(csss('mmolPerL')(tree)[0].text)
+            self.person.glucoses.append((dt, round(g, 2)))
+
     def createConnectRequest(self, external_id, friendly_name, secret_q, secret_a):
         info_tmpl = string.Template('<info><friendly-name>$FRIENDLY_NAME</friendly-name><question>$QUESTION</question><answer>$ANSWER</answer><external-id>$EXTERNAL_ID</external-id></info>')
         info = info_tmpl.substitute({
