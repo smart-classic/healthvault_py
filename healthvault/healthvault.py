@@ -51,6 +51,7 @@ class HVPerson(object):
 
 class HVConn(object):
     _user_auth_token = None
+    _offline_person_id = None
     _auth_token = None
     _record_id = None
     _app_specific_record_id = None
@@ -168,20 +169,24 @@ class HVConn(object):
         self._auth_token = csss('token')(tree)[0].text
         self._shared_secret = csss('shared-secret')(tree)[0].text
 
-    def __init__(self, user_auth_token=None):
+    def __init__(self, user_auth_token=None, offline_person_id=None):
         self._init_private_key()
         self._authenticate()
 
         if user_auth_token:
             self._user_auth_token = str(user_auth_token)
+
+        if offline_person_id:
+            self._offline_person_id = str(offline_person_id)
+
+        if user_auth_token or offline_person_id:
             self.getPersonInfo()
 
     def _build_header(self,
                       method,
                       method_version,
                       hash_data,
-                      record_id=None,
-                      user_auth_p=True):
+                      record_id=None):
         """ Create the header string. record_id is optional """
 
         header = '<header><method>$METHOD</method><method-version>$METHOD_VERSION</method-version>'
@@ -190,8 +195,11 @@ class HVConn(object):
             header = header + '<record-id>'+record_id+'</record-id>'
 
         header = header + '<auth-session><auth-token>$AUTH_TOKEN</auth-token>'
-        if user_auth_p:
+        if self._user_auth_token:
             header = header + '<user-auth-token>'+self._user_auth_token+'</user-auth-token>'
+
+        if self._offline_person_id:
+            header = header + '<offline-person-info><offline-person-id>'+self._offline_person_id+'</offline-person-id></offline-person-info>'
 
         header = header + '</auth-session><language>$LANGUAGE</language><country>$COUNTRY</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>'
 
@@ -223,13 +231,12 @@ class HVConn(object):
             'INFO': info
         })
 
-    def _create_request(self, info, method, method_version='1', record_id=None, user_auth_p=True):
+    def _create_request(self, info, method, method_version='1', record_id=None):
         hash_data = base64.b64encode(hashlib.sha256(info).digest()).strip()
         header = self._build_header(method=method,
                                     method_version=method_version,
                                     hash_data=hash_data,
-                                    record_id=record_id,
-                                    user_auth_p=user_auth_p)
+                                    record_id=record_id)
         return self._build_request(header, info)
 
     def getPersonInfo(self):
@@ -382,19 +389,12 @@ class HVConn(object):
             'EXTERNAL_ID': external_id
         })
 
-        tree = self._send_request_and_get_tree(
-            self._create_request(info,
-                                 'CreateConnectRequest',
-                                 user_auth_p=False)
-        )
-
+        tree = self._send_request_and_get_tree(self._create_request(info, 'CreateConnectRequest'))
         return csss('identity-code')(tree)[0].text
 
     def getAuthorizedConnectRequests(self):
         tree = self._send_request_and_get_tree(
-            self._create_request('<info></info>',
-                                 'GetAuthorizedConnectRequests',
-                                 user_auth_p=False)
+            self._create_request('<info></info>', 'GetAuthorizedConnectRequests')
         )
 
         reqs = []
