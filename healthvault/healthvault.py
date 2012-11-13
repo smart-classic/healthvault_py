@@ -261,6 +261,14 @@ class HVConn(object):
                                  record_id=self._record_id)
         )
 
+    def putThing(self, thing):
+        info = '<info>'+thing+'</info>'
+        return self._send_request_and_get_tree(
+            self._create_request(info,
+                                 'PutThings',
+                                 record_id=self._record_id)
+        )
+
     def getThingById(self, id):
         # Note: this is also a 'GetThings' call with additional data
         # in the <info> element. The <xml/> is required eventhough
@@ -320,6 +328,50 @@ class HVConn(object):
             dt = datetime.datetime(y, m, d, h, min, s).isoformat()
             g = float(csss('mmolPerL')(tree)[0].text)
             self.person.glucoses.append((dt, round(g, 2)))
+
+    def newGlucoseMeasurement(self, dt, value, whole_or_plasma):
+        """ Create a new glucose measurement. FIXME: ignoring whole_or_plasma! """
+
+        tmpl = string.Template("""
+        <thing>
+        <type-id name="Blood Glucose Measurement">879e7c04-4e8a-4707-9ad3-b054df467ce4</type-id>
+        <thing-state>Active</thing-state>
+        <flags>0</flags>
+        <eff-date>$NOW</eff-date>
+        <data-xml>
+            <blood-glucose>
+            <when><date><y>$Y</y><m>$M</m><d>$D</d></date><time><h>$H</h><m>$MIN</m><s>0</s></time></when>
+            <value>
+                <mmolPerL>$VALUE</mmolPerL>
+                <display units="mmol/L" units-code="mmol-per-l">$VALUE</display>
+            </value>
+            <glucose-measurement-type>
+                <text>Whole blood</text>
+                <code>
+                <value>wb</value>
+                <family>wc</family>
+                <type>glucose-measurement-type</type>
+                <version>1</version>
+                </code>
+            </glucose-measurement-type>
+            </blood-glucose>
+            <common/>
+        </data-xml>
+        </thing>""")
+
+        thing = tmpl.substitute({
+            'NOW': self._now_in_iso(),
+            'Y': dt.year,
+            'M': dt.month,
+            'D': dt.day,
+            'H': dt.hour,
+            'MIN': dt.minute,
+            'VALUE': value,
+        })
+
+        #print 'XXXXXXXXXXXX ' + thing
+        self.putThing(thing)
+        return
 
     def createConnectRequest(self, external_id, friendly_name, secret_q, secret_a):
         info_tmpl = string.Template('<info><friendly-name>$FRIENDLY_NAME</friendly-name><question>$QUESTION</question><answer>$ANSWER</answer><external-id>$EXTERNAL_ID</external-id></info>')
