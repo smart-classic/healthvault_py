@@ -169,9 +169,21 @@ class HVConn(object):
         self._auth_token = csss('token')(tree)[0].text
         self._shared_secret = csss('shared-secret')(tree)[0].text
 
-    def __init__(self, user_auth_token=None, offline_person_id=None):
+    def __init__(self,
+                 user_auth_token=None,
+                 offline_person_id=None,
+                 auth_token=None,
+                 shared_secret=None,
+                 record_id=None,
+                 get_person_info_p=True):
+
         self._init_private_key()
-        self._authenticate()
+
+        if not auth_token:
+            self._authenticate()
+        else:
+            self._auth_token = auth_token
+            self._shared_secret = shared_secret
 
         if user_auth_token:
             self._user_auth_token = str(user_auth_token)
@@ -179,7 +191,10 @@ class HVConn(object):
         if offline_person_id:
             self._offline_person_id = str(offline_person_id)
 
-        if user_auth_token or offline_person_id:
+        if record_id:
+            self._record_id = record_id
+
+        if get_person_info_p and user_auth_token or offline_person_id:
             self.getPersonInfo()
 
     def _build_header(self,
@@ -259,14 +274,18 @@ class HVConn(object):
         self._record_id = self.person.selected_record_id
 
     def getThings(self, type):
+        # get all the things and request the data with
+        # the <format>, <section> and <xml> elements
+        # would be great if that was in the spec
         info = '<info><group><filter><type-id>' \
                 + type \
-                + '</type-id></filter><format></format></group></info>'
-        return self._send_request_and_get_tree(
+                + '</type-id></filter><format><section>core</section><xml /></format></group></info>'
+        tree = self._send_request_and_get_tree(
             self._create_request(info,
                                  'GetThings',
                                  record_id=self._record_id)
         )
+        return tree
 
     def putThing(self, thing):
         info = '<info>'+thing+'</info>'
@@ -321,10 +340,9 @@ class HVConn(object):
         tree = self.getThings('879e7c04-4e8a-4707-9ad3-b054df467ce4')
         self.person.glucoses = []
 
-        for id in [t.text for t in csss('thing-id')(tree)]:
-            tree = self.getThingById(id)
-            date = csss('date')(tree)[0]
-            time = csss('time')(tree)[0]
+        for thing in csss('thing')(tree):
+            date = csss('date')(thing)[0]
+            time = csss('time')(thing)[0]
             y   = int(csss('y')(date)[0].text)
             m   = int(csss('m')(date)[0].text)
             d   = int(csss('d')(date)[0].text)
@@ -333,7 +351,7 @@ class HVConn(object):
             s   = int(csss('s')(time)[0].text)
 
             dt = datetime.datetime(y, m, d, h, min, s).isoformat()
-            g = float(csss('mmolPerL')(tree)[0].text)
+            g = float(csss('mmolPerL')(thing)[0].text)
             self.person.glucoses.append((dt, round(g, 2)))
 
     def newGlucoseMeasurement(self, dt, value, whole_or_plasma):
@@ -376,7 +394,6 @@ class HVConn(object):
             'VALUE': value,
         })
 
-        #print 'XXXXXXXXXXXX ' + thing
         self.putThing(thing)
         return
 
