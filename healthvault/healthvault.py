@@ -109,7 +109,8 @@ class HVConn(object):
             logging.debug('\ngot:\n'+etree.tostring(tree, pretty_print=True))
 
             if csss('code')(tree)[0].text != '0':
-                raise 'Non-zero return code in _send_request_and_get_tree()'
+                # FIXME: the re-auth case
+                raise 'Non-zero return code in _send_request_and_get_tree(); Re-auth maybe required'
             else:
                 return tree
 
