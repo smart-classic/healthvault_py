@@ -30,6 +30,7 @@ import datetime
 import hashlib
 import hmac
 import httplib
+import logging
 from   lxml import etree
 from   lxml.cssselect import CSSSelector as csss
 import pdb
@@ -38,8 +39,13 @@ import settings
 import socket
 import string
 
-DEBUG = True
-LOG_XML = True
+if settings.DEBUG:
+    LOG_LEVEL = logging.DEBUG
+else:
+    LOG_LEVEL = logging.INFO
+
+logging.basicConfig(level=LOG_LEVEL)
+
 
 class HVPerson(object):
     person_id = None
@@ -64,9 +70,6 @@ class HVConn(object):
 
     person = HVPerson()
 
-    def _pretty_print_tree(self, tree):
-        print etree.tostring(tree, pretty_print=True)
-
     def _now_in_iso(self):
         return datetime.datetime.utcnow().isoformat()
 
@@ -90,9 +93,7 @@ class HVConn(object):
         conn.putheader('Content-Type', 'text/xml')
         conn.putheader('Content-Length', '%d' % len(payload))
         conn.endheaders()
-
-        if DEBUG and LOG_XML:
-            print '\n---\n'+payload+'\n---'
+        logging.debug('\nsending:\n'+payload)
 
         try:
             conn.send(payload)
@@ -105,8 +106,7 @@ class HVConn(object):
             raise
         else:
             tree = etree.fromstring(resp.read())
-            if DEBUG and LOG_XML:
-                print self._pretty_print_tree(tree)
+            logging.debug('\ngot:\n'+etree.tostring(tree, pretty_print=True))
 
             if csss('code')(tree)[0].text != '0':
                 raise 'Non-zero return code in _send_request_and_get_tree()'
