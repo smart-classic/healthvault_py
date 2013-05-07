@@ -1,5 +1,5 @@
 #
-# healthvault: A Pythonic Interface to the Microsoft HealthVault's API
+# healthvault.py: A Pythonic Interface to Microsoft's HealthVault API
 #
 # Arjun Sanyal <arjun.sanyal@childrens.harvard.edu>
 #
@@ -23,16 +23,16 @@
 # - add newlines and spacing to the templates
 
 import base64
-from   Crypto.Signature import PKCS1_v1_5
-from   Crypto.Hash import SHA
-from   Crypto.PublicKey import RSA
+from Crypto.Signature import PKCS1_v1_5
+from Crypto.Hash import SHA
+from Crypto.PublicKey import RSA
 import datetime
 import hashlib
 import hmac
 import httplib
 import logging
-from   lxml import etree
-from   lxml.cssselect import CSSSelector as csss
+from lxml import etree
+from lxml.cssselect import CSSSelector as csss
 import pdb
 import re
 import settings
@@ -51,9 +51,10 @@ class HVPerson(object):
     person_id = None
     name = None
     selected_record_id = None
-    gender = None # m or f
+    gender = None  # m or f
     birth_year = None
-    weights = [] # a list of (datetime string, value in kg)
+    weights = []  # a list of (datetime string, value in kg)
+
 
 class HVConn(object):
     _user_auth_token = None
@@ -110,7 +111,8 @@ class HVConn(object):
 
             if csss('code')(tree)[0].text != '0':
                 # FIXME: the re-auth case
-                raise 'Non-zero return code in _send_request_and_get_tree(); Re-auth maybe required'
+                raise ('_send_request_and_get_tree: non-zero return code '
+                       'Re-auth may be required.')
             else:
                 return tree
 
@@ -129,31 +131,31 @@ class HVConn(object):
         }).translate(None, '\n ')
 
         t = string.Template("""
-            <wc-request:request xmlns:wc-request="urn:com.microsoft.wc.request">
-                <header>
-                    <method>CreateAuthenticatedSessionToken</method>
-                    <method-version>2</method-version>
+        <wc-request:request xmlns:wc-request="urn:com.microsoft.wc.request">
+            <header>
+                <method>CreateAuthenticatedSessionToken</method>
+                <method-version>2</method-version>
+                <app-id>$APP_ID</app-id>
+                <msg-time>$NOW</msg-time>
+                <msg-ttl>$MSG_TTL</msg-ttl>
+                <version>$VERSION</version>
+            </header>
+            <info>
+                <auth-info>
                     <app-id>$APP_ID</app-id>
-                    <msg-time>$NOW</msg-time>
-                    <msg-ttl>$MSG_TTL</msg-ttl>
-                    <version>$VERSION</version>
-                </header>
-                <info>
-                    <auth-info>
-                        <app-id>$APP_ID</app-id>
-                        <credential>
-                            <appserver2>
-                                <sig digestMethod="SHA1"
-                                     sigMethod="RSA-SHA1"
-                                     thumbprint="$APP_THUMBPRINT">
-                                        $SIGNATURE
-                                </sig>
-                                $CONTENT
-                            </appserver2>
-                        </credential>
-                    </auth-info>
-                </info>
-            </wc-request:request>""")
+                    <credential>
+                        <appserver2>
+                            <sig digestMethod="SHA1"
+                                 sigMethod="RSA-SHA1"
+                                 thumbprint="$APP_THUMBPRINT">
+                                    $SIGNATURE
+                            </sig>
+                            $CONTENT
+                        </appserver2>
+                    </credential>
+                </auth-info>
+            </info>
+        </wc-request:request>""")
 
         payload = t.substitute({
             'APP_ID': settings.APP_ID,
@@ -205,19 +207,36 @@ class HVConn(object):
                       record_id=None):
         """ Create the header string. record_id is optional """
 
-        header = '<header><method>$METHOD</method><method-version>$METHOD_VERSION</method-version>'
+        header = ('<header><method>$METHOD</method>'
+                  '<method-version>$METHOD_VERSION</method-version>')
 
         if record_id:
-            header = header + '<record-id>'+record_id+'</record-id>'
+            header = header + '<record-id>' + record_id + '</record-id>'
 
         header = header + '<auth-session><auth-token>$AUTH_TOKEN</auth-token>'
         if self._user_auth_token:
-            header = header + '<user-auth-token>'+self._user_auth_token+'</user-auth-token>'
+            header = (header +
+                      '<user-auth-token>' +
+                      self._user_auth_token +
+                      '</user-auth-token>')
 
         if self._offline_person_id:
-            header = header + '<offline-person-info><offline-person-id>'+self._offline_person_id+'</offline-person-id></offline-person-info>'
+            header = (header +
+                      '<offline-person-info><offline-person-id>' +
+                      self._offline_person_id +
+                      '</offline-person-id></offline-person-info>')
 
-        header = header + '</auth-session><language>$LANGUAGE</language><country>$COUNTRY</country><msg-time>$NOW</msg-time><msg-ttl>$TTL</msg-ttl><version>$VERSION</version><info-hash><hash-data algName="SHA256">$HASH_DATA</hash-data></info-hash></header>'
+        header = (header +
+                  '</auth-session>'
+                  '<language>$LANGUAGE</language>'
+                  '<country>$COUNTRY</country>'
+                  '<msg-time>$NOW</msg-time>'
+                  '<msg-ttl>$TTL</msg-ttl>'
+                  '<version>$VERSION</version>'
+                  '<info-hash>'
+                  '<hash-data algName="SHA256">$HASH_DATA</hash-data>'
+                  '</info-hash>'
+                  '</header>')
 
         return string.Template(header).substitute({
             'METHOD': method,
@@ -240,14 +259,22 @@ class HVConn(object):
 
     def _build_request(self, header, info):
         # NOTE: don't add spaces and newlines here!
-        req_tmpl = string.Template("""<wc-request:request xmlns:wc-request="urn:com.microsoft.wc.request"><auth><hmac-data algName="HMACSHA256">$HMAC</hmac-data></auth>$HEADER$INFO</wc-request:request>""")
+        req_tmpl = string.Template(
+            '<wc-request:request '
+            'xmlns:wc-request="urn:com.microsoft.wc.request">'
+            '<auth><hmac-data algName="HMACSHA256">$HMAC</hmac-data></auth>'
+            '$HEADER$INFO</wc-request:request>')
         return req_tmpl.substitute({
             'HMAC': self._build_header_hmac(header),
             'HEADER': header,
             'INFO': info
         })
 
-    def _create_request(self, info, method, method_version='1', record_id=None):
+    def _create_request(self,
+                        info,
+                        method,
+                        method_version='1',
+                        record_id=None):
         hash_data = base64.b64encode(hashlib.sha256(info).digest()).strip()
         header = self._build_header(method=method,
                                     method_version=method_version,
@@ -271,16 +298,19 @@ class HVConn(object):
         )
         self.person.person_id = csss('person-id')(tree)[0].text
         self.person.name = csss('name')(tree)[0].text
-        self.person.selected_record_id = csss('selected-record-id')(tree)[0].text
+        self.person.selected_record_id = \
+            csss('selected-record-id')(tree)[0].text
         self._record_id = self.person.selected_record_id
 
     def getThings(self, type):
         # get all the things and request the data with
         # the <format>, <section> and <xml> elements
         # would be great if that was in the spec
-        info = '<info><group><filter><type-id>' \
-                + type \
-                + '</type-id></filter><format><section>core</section><xml /></format></group></info>'
+        info = ('<info><group><filter><type-id>' +
+                type +
+                '</type-id></filter>' +
+                '<format><section>core</section><xml /></format>' +
+                '</group></info>')
         tree = self._send_request_and_get_tree(
             self._create_request(info,
                                  'GetThings',
@@ -300,9 +330,12 @@ class HVConn(object):
         # Note: this is also a 'GetThings' call with additional data
         # in the <info> element. The <xml/> is required eventhough
         # it's marked at <xml />* in the spec. Spec bug?
-        info = '<info><group><id>' \
-                + id \
-                +'</id><format><section>core</section><xml/></format></group></info>'
+        info = ('<info><group><id>' +
+                id +
+                '</id>' +
+                '<format>' +
+                '<section>core</section>' +
+                '<xml/></format></group></info>')
 
         return self._send_request_and_get_tree(
             self._create_request(info,
@@ -326,12 +359,12 @@ class HVConn(object):
             tree = self.getThingById(id)
             date = csss('date')(tree)[0]
             time = csss('time')(tree)[0]
-            y   = int(csss('y')(date)[0].text)
-            m   = int(csss('m')(date)[0].text)
-            d   = int(csss('d')(date)[0].text)
-            h   = int(csss('h')(time)[0].text)
+            y = int(csss('y')(date)[0].text)
+            m = int(csss('m')(date)[0].text)
+            d = int(csss('d')(date)[0].text)
+            h = int(csss('h')(time)[0].text)
             min = int(csss('m')(time)[0].text)
-            s   = int(csss('s')(time)[0].text)
+            s = int(csss('s')(time)[0].text)
 
             dt = datetime.datetime(y, m, d, h, min, s).isoformat()
             weight_in_kg = float(csss('kg')(tree)[0].text)
@@ -344,32 +377,46 @@ class HVConn(object):
         for thing in csss('thing')(tree):
             date = csss('date')(thing)[0]
             time = csss('time')(thing)[0]
-            y   = int(csss('y')(date)[0].text)
-            m   = int(csss('m')(date)[0].text)
-            d   = int(csss('d')(date)[0].text)
-            h   = int(csss('h')(time)[0].text)
+            y = int(csss('y')(date)[0].text)
+            m = int(csss('m')(date)[0].text)
+            d = int(csss('d')(date)[0].text)
+            h = int(csss('h')(time)[0].text)
             min = int(csss('m')(time)[0].text)
-            s   = int(csss('s')(time)[0].text)
+            s = int(csss('s')(time)[0].text)
 
             dt = datetime.datetime(y, m, d, h, min, s).isoformat()
             g = float(csss('mmolPerL')(thing)[0].text)
             self.person.glucoses.append((dt, round(g, 2)))
 
     def newGlucoseMeasurement(self, dt, value, whole_or_plasma):
-        """ Create a new glucose measurement. FIXME: ignoring whole_or_plasma! """
+        """ Create a new glucose measurement.
+            FIXME: ignoring whole_or_plasma! """
 
         tmpl = string.Template("""
         <thing>
-        <type-id name="Blood Glucose Measurement">879e7c04-4e8a-4707-9ad3-b054df467ce4</type-id>
+        <type-id name="Blood Glucose Measurement">$TYPEID</type-id>
         <thing-state>Active</thing-state>
         <flags>0</flags>
         <eff-date>$NOW</eff-date>
         <data-xml>
             <blood-glucose>
-            <when><date><y>$Y</y><m>$M</m><d>$D</d></date><time><h>$H</h><m>$MIN</m><s>0</s></time></when>
+            <when>
+                <date>
+                    <y>$Y</y>
+                    <m>$M</m>
+                    <d>$D</d>
+                </date>
+                <time>
+                    <h>$H</h>
+                    <m>$MIN</m>
+                    <s>0</s>
+                </time>
+            </when>
             <value>
                 <mmolPerL>$VALUE</mmolPerL>
-                <display units="mmol/L" units-code="mmol-per-l">$VALUE</display>
+                <display
+                    units="mmol/L"
+                    units-code="mmol-per-l">$VALUE</display>
             </value>
             <glucose-measurement-type>
                 <text>Whole blood</text>
@@ -386,6 +433,7 @@ class HVConn(object):
         </thing>""")
 
         thing = tmpl.substitute({
+            'TYPEID': '879e7c04-4e8a-4707-9ad3-b054df467ce4',
             'NOW': self._now_in_iso(),
             'Y': dt.year,
             'M': dt.month,
@@ -398,8 +446,18 @@ class HVConn(object):
         self.putThing(thing)
         return
 
-    def createConnectRequest(self, external_id, friendly_name, secret_q, secret_a):
-        info_tmpl = string.Template('<info><friendly-name>$FRIENDLY_NAME</friendly-name><question>$QUESTION</question><answer>$ANSWER</answer><external-id>$EXTERNAL_ID</external-id></info>')
+    def createConnectRequest(self,
+                             external_id,
+                             friendly_name,
+                             secret_q,
+                             secret_a):
+        info_tmpl = string.Template(
+            '<info>'
+            '<friendly-name>$FRIENDLY_NAME</friendly-name>'
+            '<question>$QUESTION</question>'
+            '<answer>$ANSWER</answer>'
+            '<external-id>$EXTERNAL_ID</external-id>'
+            '</info>')
         info = info_tmpl.substitute({
             'FRIENDLY_NAME': friendly_name,
             'QUESTION': secret_q,
@@ -407,12 +465,15 @@ class HVConn(object):
             'EXTERNAL_ID': external_id
         })
 
-        tree = self._send_request_and_get_tree(self._create_request(info, 'CreateConnectRequest'))
+        tree = self._send_request_and_get_tree(
+            self._create_request(info, 'CreateConnectRequest')
+        )
         return csss('identity-code')(tree)[0].text
 
     def getAuthorizedConnectRequests(self):
         tree = self._send_request_and_get_tree(
-            self._create_request('<info></info>', 'GetAuthorizedConnectRequests')
+            self._create_request('<info></info>',
+                                 'GetAuthorizedConnectRequests')
         )
 
         reqs = []
