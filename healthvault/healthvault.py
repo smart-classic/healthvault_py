@@ -34,6 +34,7 @@ import logging
 from lxml import etree
 from lxml.cssselect import CSSSelector as csss
 import re
+import settings
 import socket
 import string
 
