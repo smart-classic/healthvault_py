@@ -38,10 +38,8 @@ import settings
 import socket
 import string
 
-# LOG_LEVEL = logging.DEBUG
-LOG_LEVEL = logging.INFO
-logging.basicConfig(level=LOG_LEVEL)
-
+# use the calling module's loglevel unless there's a need to override
+#logging.basicConfig(level=DEBUG)
 
 class HVPerson(object):
     person_id = None
