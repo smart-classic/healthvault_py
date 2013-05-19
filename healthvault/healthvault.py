@@ -33,17 +33,12 @@ import httplib
 import logging
 from lxml import etree
 from lxml.cssselect import CSSSelector as csss
-import pdb
 import re
-import settings
 import socket
 import string
 
-if settings.DEBUG:
-    LOG_LEVEL = logging.DEBUG
-else:
-    LOG_LEVEL = logging.INFO
-
+# LOG_LEVEL = logging.DEBUG
+LOG_LEVEL = logging.INFO
 logging.basicConfig(level=LOG_LEVEL)
 
 
